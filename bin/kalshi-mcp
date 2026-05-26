@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# Single entry point that OpenClaw spawns as the "kalshi" MCP server.
+#
+# It does three things:
+#   1. Loads Kalshi credentials from the local (gitignored) .env file.
+#   2. Ensures the local pmxt-core engine is running on a loopback port. That
+#      engine inherits the KALSHI_* env vars and is what actually signs and
+#      sends requests to Kalshi — the credentials never leave this machine and
+#      never pass through the agent.
+#   3. Hands its stdio to @pmxt/mcp in local mode, which forwards every MCP tool
+#      call to the local engine.
+#
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$ROOT/node_modules/.bin"
+PORT="${PMXT_LOCAL_PORT:-38470}"
+URL="http://127.0.0.1:${PORT}"
+
+if [ ! -x "$BIN/pmxt-mcp" ]; then
+  echo "kalshi-mcp: dependencies not installed. Run: npm run setup" >&2
+  exit 1
+fi
+
+# Load credentials (KALSHI_API_KEY, KALSHI_PRIVATE_KEY) so the engine started
+# below inherits them.
+if [ -f "$ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/.env"
+  set +a
+else
+  echo "kalshi-mcp: missing $ROOT/.env (copy .env.example and fill in your Kalshi key)" >&2
+  exit 1
+fi
+export PMXT_LOCAL_PORT="$PORT"
+
+# Start the engine if it isn't already healthy (idempotent).
+if ! curl -fsS "$URL/health" >/dev/null 2>&1; then
+  node "$ROOT/bin/pmxt-local-server.js" &
+  for _ in $(seq 1 50); do
+    curl -fsS "$URL/health" >/dev/null 2>&1 && break
+    sleep 0.2
+  done
+  curl -fsS "$URL/health" >/dev/null 2>&1 || { echo "kalshi-mcp: engine failed to start on $URL" >&2; exit 1; }
+fi
+
+# Local mode: no PMXT_API_KEY means @pmxt/mcp talks to our local engine.
+unset PMXT_API_KEY 2>/dev/null || true
+export PMXT_API_URL="$URL"
+
+exec "$BIN/pmxt-mcp"

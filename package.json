@@ -1,0 +1,22 @@
+{
+  "name": "openclaw-kalshi-pmxt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw skill for conversational Kalshi trading, powered by the official pmxt MCP server and a local pmxt-core engine. The Kalshi RSA key stays on your machine and never enters the agent context.",
+  "license": "MIT",
+  "bin": {
+    "kalshi-mcp": "bin/kalshi-mcp"
+  },
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "server:ensure": "pmxt-ensure-server",
+    "server:stop": "pmxt server stop || true",
+    "check": "bash scripts/check.sh",
+    "update:pmxt": "npm i pmxt-core@latest @pmxt/mcp@latest @pmxt/cli@latest"
+  },
+  "dependencies": {
+    "@pmxt/cli": "2.46.3",
+    "@pmxt/mcp": "2.46.3",
+    "pmxt-core": "2.46.3"
+  }
+}

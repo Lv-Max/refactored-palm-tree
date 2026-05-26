@@ -1,0 +1,5 @@
+node_modules/
+# Kalshi credentials live here — NEVER commit them.
+.env
+*.pem
+.pmxt/
