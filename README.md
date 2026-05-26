@@ -156,6 +156,21 @@ around for just those Kalshi-specific operations.
 - **Balance/positions/orders error about credentials** — `.env` is missing or
   still has placeholder values; public market data works without a key, trading
   does not.
+- **`429` / `Exchange unreachable ... retryable`** — a transient Kalshi rate
+  limit. `npm run check` already uses a narrow query and retries with backoff.
+  In normal use, retry the tool call after a short wait rather than treating it
+  as a hard failure.
+
+## Dependency audit
+
+`npm audit` reports ~21 advisories (low/moderate). They are all inside the
+blockchain/Solana wallet SDKs that pmxt-core bundles for **other** venues
+(`ethers`/`@ethersproject/*`, `@solana/web3.js`, `@polymarket/clob-client`,
+`@limitless-exchange/sdk`) — **none are on the Kalshi path**, which uses RSA
+signing + HTTP only. Do **not** run `npm audit fix --force`: its only
+"fix" downgrades pmxt-core to a 1.x major and throws away the API-drift
+handling. These clear as pmxt updates its dependencies upstream — pick that up
+with `npm run update:pmxt`.
 
 ## Keeping pmxt current
 

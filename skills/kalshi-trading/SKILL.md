@@ -113,4 +113,7 @@ settlements, or live streaming. If asked for one of these, say it's out of scope
   to check their `.env` and that `bin/kalshi-mcp` is the configured launcher.
 - Empty market results usually mean the query was too narrow; broaden it or use
   `fetchEvents`.
+- A `429` or a `retryable` "Exchange unreachable" error is a transient Kalshi
+  rate limit, not a real failure — wait a moment and retry the call (a couple of
+  times with a short backoff) before giving up.
 - Don't paper over a failed trade as success. Report the actual tool error.
