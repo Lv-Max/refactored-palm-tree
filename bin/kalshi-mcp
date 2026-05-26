@@ -36,14 +36,19 @@ else
 fi
 export PMXT_LOCAL_PORT="$PORT"
 
+# Health check via node (no curl dependency — node is always present here).
+health() {
+  node -e 'fetch(process.argv[1]).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))' "$URL/health" >/dev/null 2>&1
+}
+
 # Start the engine if it isn't already healthy (idempotent).
-if ! curl -fsS "$URL/health" >/dev/null 2>&1; then
+if ! health; then
   node "$ROOT/bin/pmxt-local-server.js" &
   for _ in $(seq 1 50); do
-    curl -fsS "$URL/health" >/dev/null 2>&1 && break
+    health && break
     sleep 0.2
   done
-  curl -fsS "$URL/health" >/dev/null 2>&1 || { echo "kalshi-mcp: engine failed to start on $URL" >&2; exit 1; }
+  health || { echo "kalshi-mcp: engine failed to start on $URL" >&2; exit 1; }
 fi
 
 # Local mode: no PMXT_API_KEY means @pmxt/mcp talks to our local engine.

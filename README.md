@@ -65,6 +65,12 @@ authenticating proxy.
 
 ## Setup (operator)
 
+Handing over the repo is **setup + 3 short operator steps** — it is not fully
+drop-and-go, by design: your Kalshi key must be entered by you (it never touches
+the agent), and the MCP server must be registered with OpenClaw before the tools
+exist. After that, conversational trading works and the agent follows
+[AGENTS.md](AGENTS.md) / the skill.
+
 ```bash
 npm run setup          # installs pmxt-core + @pmxt/mcp + @pmxt/cli, creates .env
 $EDITOR .env           # fill in KALSHI_API_KEY and KALSHI_PRIVATE_KEY
@@ -136,6 +142,20 @@ pmxt's hosted/enterprise router.
 
 If you later need the not-available items, keep `6missedcalls/kalshi-cli`
 around for just those Kalshi-specific operations.
+
+## Troubleshooting
+
+- **`Exchange unreachable: self-signed certificate in certificate chain`** — the
+  host routes outbound traffic through a TLS-intercepting proxy. Point Node at
+  the proxy's CA bundle in the same environment that launches `bin/kalshi-mcp`:
+  `export NODE_EXTRA_CA_CERTS=/path/to/ca-bundle.crt`. Do **not** use
+  `NODE_TLS_REJECT_UNAUTHORIZED=0` for real-money trading. (Normal hosts with
+  clean egress are unaffected.)
+- **`kalshi` tools don't appear in OpenClaw** — the MCP server isn't registered,
+  or OpenClaw wasn't reloaded after editing `openclaw.json`.
+- **Balance/positions/orders error about credentials** — `.env` is missing or
+  still has placeholder values; public market data works without a key, trading
+  does not.
 
 ## Keeping pmxt current
 
