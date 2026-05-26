@@ -4,6 +4,13 @@ Conversational Kalshi trading for OpenClaw, built on the
 [**pmxt**](https://github.com/pmxt-dev/pmxt) prediction-market engine instead of
 a hand-maintained CLI.
 
+> **Two audiences, two docs.**
+> - **This file (README.md) is for the human/operator** setting the repo up.
+> - **[AGENTS.md](AGENTS.md) is for the agent** (OpenClaw) — it tells the agent
+>   what the repo is, how to check it's set up, and where the trading skill
+>   lives. The runtime trading rules are in
+>   [`skills/kalshi-trading/SKILL.md`](skills/kalshi-trading/SKILL.md).
+
 ## Why this instead of kalshi-cli
 
 The previous setup (`openclaw-kalshi-trading-skill` → `6missedcalls/kalshi-cli`)
@@ -25,27 +32,38 @@ OpenClaw agent
 bin/kalshi-mcp  ──spawns──►  @pmxt/mcp  (official, stdio, local mode)
    │                              │  POST /api/kalshi/<method>
    │                              ▼
-   └── ensures ──────────►  pmxt-core server  (localhost:3847)
+   └── ensures ──────────►  pmxt-core engine  (127.0.0.1, loopback only)
                                   │  signed RSA requests
                                   ▼
                               Kalshi API
 ```
 
-- **`pmxt-core`** runs locally on `:3847` and makes the real, RSA-signed calls
-  to Kalshi. It reads your key from `KALSHI_API_KEY` / `KALSHI_PRIVATE_KEY`.
+- **`pmxt-core`** runs locally and makes the real, RSA-signed calls to Kalshi.
+  It reads your key from `KALSHI_API_KEY` / `KALSHI_PRIVATE_KEY`.
 - **`@pmxt/mcp`** is the official MCP server. In local mode (no `PMXT_API_KEY`)
-  it just forwards tool calls to `pmxt-core`.
+  it forwards tool calls to the local engine.
 - **`bin/kalshi-mcp`** is the single command OpenClaw spawns. It loads `.env`,
-  ensures `pmxt-core` is up, and hands stdio to `@pmxt/mcp`.
+  ensures the engine is up, and hands stdio to `@pmxt/mcp`.
+
+### Why we boot the engine ourselves
+
+`@pmxt/mcp`'s "local mode" sends an `Authorization: Bearer` header, but the
+stock `pmxt-server` requires an `x-pmxt-access-token` header — so they don't
+talk to each other out of the box (you get a 401). `bin/pmxt-local-server.js`
+starts the same pmxt-core engine **without an access token, bound to 127.0.0.1
+only**, which the official MCP server can reach. All Kalshi logic still lives in
+pmxt-core, so upstream updates still flow through.
 
 ### Security posture
 
 Your Kalshi RSA private key lives only in the local, gitignored `.env` and is
-read only by the local `pmxt-core` server. It is **never** passed in MCP tool
-calls, so it never enters the agent / LLM context, and **nothing is sent to
-pmxt.dev** — local mode talks only to `localhost:3847`.
+read only by the local engine. It is **never** passed in MCP tool calls, so it
+never enters the agent / LLM context, and **nothing is sent to pmxt.dev** —
+local mode talks only to `127.0.0.1`. The engine has no auth token because it
+binds to loopback only; on a shared/multi-user host, front it with an
+authenticating proxy.
 
-## Setup
+## Setup (operator)
 
 ```bash
 npm run setup          # installs pmxt-core + @pmxt/mcp + @pmxt/cli, creates .env
@@ -54,7 +72,7 @@ npm run check          # smoke test: fetches real Kalshi markets (public, no key
 ```
 
 Then register the MCP server with OpenClaw. Add to your `openclaw.json` (see
-`config/openclaw.example.json`), using the absolute path to `bin/kalshi-mcp`:
+`config/openclaw.example.json`), using the **absolute** path to `bin/kalshi-mcp`:
 
 ```json
 {
@@ -65,8 +83,7 @@ Then register the MCP server with OpenClaw. Add to your `openclaw.json` (see
 ```
 
 Finally, install the skill: copy `skills/kalshi-trading/` into your OpenClaw
-skills directory. The skill teaches the agent the tool catalog, the
-real-money-vs-demo distinction, and the confirm-before-trading workflow.
+skills directory.
 
 ## Credentials
 
@@ -78,28 +95,65 @@ as a single line with literal `\n` between lines (see `.env.example`).
 - `exchange: "kalshi-demo"` → paper trading (`demo-api.kalshi.co`), which needs a
   **separate** demo-account key.
 
+## Feature status
+
+Verified working end-to-end (launcher → `@pmxt/mcp` → local engine returns live
+Kalshi data). All tools take an `exchange` of `"kalshi"` (real) or
+`"kalshi-demo"` (paper).
+
+### Implemented (core Kalshi trading)
+
+| Area | Tools |
+|------|-------|
+| Market discovery | `fetchMarkets`, `fetchMarketsPaginated`, `fetchMarket`, `fetchEvents`, `fetchEventsPaginated`, `fetchEvent`, `fetchRelatedMarkets`, `loadMarkets` |
+| Prices / book / history | `fetchOrderBook`, `fetchOrderBooks`, `fetchTrades`, `fetchOHLCV` (candle data), `getExecutionPrice`, `getExecutionPriceDetailed` |
+| Account | `fetchBalance`, `fetchPositions`, `fetchOpenOrders`, `fetchClosedOrders`, `fetchAllOrders`, `fetchOrder`, `fetchMyTrades` |
+| Trading | `buildOrder`, `createOrder`, `submitOrder`, `cancelOrder` |
+
+YES/NO is handled via the outcome you trade (buy the YES outcome vs. the NO
+outcome); market and limit orders are both supported.
+
+### Available but cross-venue / may need hosted mode
+
+`compareMarketPrices`, `fetchArbitrage`, `fetchHedges`, `fetchMatchedMarkets`,
+`fetchMatchedPrices`, `fetchMarketMatches`, `fetchEventMatches` — these compare
+across venues and are not needed for single-venue Kalshi trading. Some require
+pmxt's hosted/enterprise router.
+
+### Not available (kalshi-cli had these; pmxt's unified API does not)
+
+| Feature | Status / workaround |
+|---------|--------------------|
+| Order amend (change price/qty) | Not exposed → `cancelOrder` then `createOrder` |
+| Batch create / order groups | Not exposed → place orders one by one |
+| Order queue position | Not exposed |
+| RFQ / block trades (quotes) | Not exposed |
+| Subaccounts (list/create/transfer) | Not exposed |
+| Settlements history | Not a dedicated tool; `fetchClosedOrders` / `fetchPositions` cover resolved orders/positions |
+| Live WebSocket streaming (watch) | Not exposed via MCP (streaming methods are skipped) |
+| ASCII candlestick charts | Raw candles available via `fetchOHLCV`; chart rendering is up to the client |
+| Trade-confirmation share image | **No Kalshi/pmxt API for this.** Order results are reported as text |
+
+If you later need the not-available items, keep `6missedcalls/kalshi-cli`
+around for just those Kalshi-specific operations.
+
 ## Keeping pmxt current
 
 ```bash
 npm run update:pmxt    # bumps pmxt-core, @pmxt/mcp, @pmxt/cli together
 ```
 
-Because the trading logic lives in pmxt, updating these packages is how you pick
-up Kalshi API changes — no edits to this repo required.
-
-## What's covered
-
-Core trading: search markets/events, order book, prices, balance, positions,
-open/closed orders, fills, place/cancel orders, order status. The
-Kalshi-specific extras kalshi-cli had (RFQ/block trades, subaccounts,
-settlements, order amend, batch-create, live WebSocket streaming, candlestick
-charts) are **not** exposed by pmxt's unified API and are out of scope here.
+Updating these packages is how you pick up Kalshi API changes — no edits to this
+repo required.
 
 ## Layout
 
 ```
+README.md                   this file — operator setup
+AGENTS.md                   agent entrypoint — what OpenClaw should do
+skills/kalshi-trading/      the OpenClaw skill (SKILL.md) — runtime trading rules
 bin/kalshi-mcp              launcher OpenClaw spawns as the "kalshi" MCP server
-skills/kalshi-trading/      the OpenClaw skill (SKILL.md)
+bin/pmxt-local-server.js    boots the local pmxt-core engine (token-free, loopback)
 config/openclaw.example.json  MCP registration snippet
 scripts/setup.sh            install + scaffold
 scripts/check.sh            public-data smoke test

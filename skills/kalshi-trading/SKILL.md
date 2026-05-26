@@ -90,12 +90,22 @@ the user can't afford.
      (price is required for limit orders).
    - For a two-step review you can call `buildOrder` (returns the order for
      inspection), show it, then `submitOrder` to execute.
-5. Report back the returned order id, fill status, and any fee.
+5. Report back the returned order id, fill status, and any fee, as a clear text
+   summary. There is no Kalshi/pmxt API that returns a shareable
+   trade-confirmation image, so don't promise one — summarize the fill in text.
 
 ### Cancel an order
 1. `fetchOpenOrders { exchange }` to find the order id.
 2. Confirm with the user which order.
 3. `cancelOrder { exchange, orderId }`.
+
+## Out of scope
+
+The `kalshi` server also exposes cross-venue tools (`compareMarketPrices`,
+`fetchArbitrage`, `fetchHedges`, `fetchMatched*`). They are not part of Kalshi
+trading and may need pmxt's hosted mode — ignore them here. There is no support
+for order amend, batch orders, RFQ/block trades, subaccounts, dedicated
+settlements, or live streaming. If asked for one of these, say it's out of scope.
 
 ## When something looks empty or wrong
 - A `fetchBalance` / `fetchPositions` call that errors about credentials means
